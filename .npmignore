@@ -1,0 +1,11 @@
+.vscode/
+.github/
+.gitattributes
+src/
+tsconfig*.json
+tests/
+vitest.config.ts
+.github/
+
+# tarballs
+darco2903-ffmpeg-ts-*.tgz

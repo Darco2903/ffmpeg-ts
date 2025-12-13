@@ -1,0 +1,9 @@
+node_modules/
+.vscode/
+dist/
+*_
+*_.*
+dist/
+
+# tarballs
+darco2903-ffmpeg-ts-*.tgz
