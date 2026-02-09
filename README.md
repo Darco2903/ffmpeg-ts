@@ -2,10 +2,14 @@
 
 This library provides a TypeScript wrapper around the FFMPEG command-line tool, allowing you to easily run FFMPEG commands, monitor progress, and handle output in a TypeScript environment.
 
+## Installation
+
+You can found the package here: [**@darco2903/ffmpeg-ts**](https://github.com/users/Darco2903/packages/npm/package/ffmpeg-ts)
+
 ## Example
 
 ```ts
-import { FFMPEG } from "ffmpeg-ts";
+import { FFMPEG } from "@darco2903/ffmpeg-ts";
 
 const args: string[] = ["-i", "input.mp4", "-c:v", "libx264", "-preset", "fast", "-c:a", "aac", "-b:a", "128k", "output.mp4", "-y"];
 
