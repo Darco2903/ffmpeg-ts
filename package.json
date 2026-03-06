@@ -2,7 +2,7 @@
     "name": "@darco2903/ffmpeg-ts",
     "version": "1.0.0",
     "author": "Darco2903",
-    "description": "TS FFMPEG CLI Wrapper",
+    "description": "TypeScript FFMPEG CLI Wrapper",
     "keywords": [
         "ffmpeg",
         "typescript",
@@ -13,27 +13,27 @@
     "main": "dist/index.js",
     "types": "dist/index.d.ts",
     "type": "module",
-    "packageManager": "pnpm@10.25.0",
+    "packageManager": "pnpm@10.30.3",
+    "repository": {
+        "url": "https://github.com/Darco2903/web-common.git"
+    },
     "publishConfig": {
-        "registry": "https://npm.pkg.github.com"
+        "access": "public"
     },
     "scripts": {
         "build": "tsc",
         "prepack": "pnpm build",
         "test": "vitest",
-        "test:ui": "vitest --ui",
         "clean": "rimraf -g dist darco2903-ffmpeg-ts-*.tgz"
     },
     "dependencies": {
-        "@darco2903/typed-emitter": "^1.2.1",
+        "@darco2903/typed-emitter": "^1.3.0",
         "neverthrow": "^8.2.0"
     },
     "devDependencies": {
-        "@types/node": "^24.10.3",
-        "@vitest/ui": "^3.2.4",
-        "rimraf": "^6.1.2",
-        "tsx": "^4.21.0",
+        "@types/node": "^25.3.5",
+        "rimraf": "^6.1.3",
         "typescript": "^5.9.3",
-        "vitest": "^3.2.4"
+        "vitest": "^4.0.18"
     }
 }

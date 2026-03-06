@@ -4,7 +4,9 @@ This library provides a TypeScript wrapper around the FFMPEG command-line tool, 
 
 ## Installation
 
-You can find the package here: [**@darco2903/ffmpeg-ts**](https://github.com/users/Darco2903/packages/npm/package/ffmpeg-ts)
+```bash
+npm install @darco2903/ffmpeg-ts
+```
 
 ## Example
 
