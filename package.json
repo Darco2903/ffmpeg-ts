@@ -15,7 +15,7 @@
     "type": "module",
     "packageManager": "pnpm@10.30.3",
     "repository": {
-        "url": "https://github.com/Darco2903/web-common.git"
+        "url": "https://github.com/Darco2903/ffmpeg-ts.git"
     },
     "publishConfig": {
         "access": "public"
