@@ -1,6 +1,6 @@
 {
     "name": "@darco2903/ffmpeg-ts",
-    "version": "1.0.1-beta.0",
+    "version": "1.0.1",
     "author": "Darco2903",
     "description": "TypeScript FFMPEG CLI Wrapper",
     "keywords": [
