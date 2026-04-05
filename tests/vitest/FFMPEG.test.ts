@@ -1,7 +1,7 @@
 import fs from "fs";
 import { execSync } from "child_process";
 import { describe, it, expect, afterAll } from "vitest";
-import { FFMPEG, FFMPEGProgress } from "../../src";
+import { FFMPEG, FFMPEGProgress } from "../../src/index.js";
 
 //////////////////////////
 // create FFMPEG tests

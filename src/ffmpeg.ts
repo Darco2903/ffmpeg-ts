@@ -1,5 +1,5 @@
 import { type ChildProcessWithoutNullStreams, spawn } from "child_process";
-import { err, ok, type Result } from "neverthrow";
+import { err, errAsync, ok, ResultAsync } from "neverthrow";
 import { TypedEmitterProtected } from "@darco2903/typed-emitter";
 import type { FFMPEGProgress, FFMPEGSpawnErr } from "./types/index.js";
 import type { FFMPEGEvents } from "./types/events.js";
@@ -120,9 +120,9 @@ export class FFMPEG extends TypedEmitterProtected<FFMPEGEvents> {
         }
     }
 
-    public async start(): Promise<Result<void, FFMPEGSpawnErr>> {
+    public start(): ResultAsync<void, FFMPEGSpawnErr> {
         if (this.processing) {
-            return err({ code: -1, message: "FFMPEG process already started" });
+            return errAsync({ code: -1, message: "FFMPEG process already started" });
         }
 
         let child: ChildProcessWithoutNullStreams;
@@ -133,7 +133,7 @@ export class FFMPEG extends TypedEmitterProtected<FFMPEGEvents> {
             child = spawn(this.execPath, this.args);
             this.child = child;
         } catch (e) {
-            return err({ code: -1, message: String(e) });
+            return errAsync({ code: -1, message: String(e) });
         }
 
         child.stdout.setEncoding("utf8");
@@ -154,21 +154,29 @@ export class FFMPEG extends TypedEmitterProtected<FFMPEGEvents> {
             this.onStderrData(data);
         });
 
-        return new Promise<Result<void, FFMPEGSpawnErr>>((resolve) => {
-            child.once("close", async (code) => {
-                this.child = null;
+        return ResultAsync.fromSafePromise(
+            new Promise<null | FFMPEGSpawnErr>((resolve) => {
+                child.once("close", async (code) => {
+                    this.child = null;
 
-                if (code === 0) {
-                    resolve(ok());
-                } else {
-                    resolve(err({ code: code ?? -1, message: this.lastStderr }));
-                }
-            });
+                    if (code === 0) {
+                        resolve(null);
+                    } else {
+                        resolve({ code: code ?? -1, message: this.lastStderr });
+                    }
+                });
 
-            child.once("error", async (e) => {
-                this.child = null;
-                resolve(err({ code: -1, message: e.message }));
-            });
+                child.once("error", async (e) => {
+                    this.child = null;
+                    resolve({ code: -1, message: e.message });
+                });
+            }),
+        ).andThen((spawnErr) => {
+            if (spawnErr !== null) {
+                return err(spawnErr);
+            } else {
+                return ok(undefined);
+            }
         });
     }
 
