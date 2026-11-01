@@ -18,7 +18,8 @@
         ".": {
             "types": "./dist/index.d.ts",
             "default": "./dist/index.js"
-        }
+        },
+        "./package.json": "./package.json"
     },
     "files": [
         "dist"
@@ -35,7 +36,7 @@
     },
     "scripts": {
         "build": "tsc",
-        "check": "tsc --noEmit",
+        "check": "tsc -p tests/tsconfig.json",
         "prepack": "pnpm build",
         "test": "vitest run",
         "clean": "rimraf -g dist darco2903-ffmpeg-ts-*.tgz"

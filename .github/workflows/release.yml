@@ -1,79 +1,81 @@
 name: Release
 
 on:
-    push:
-        tags:
-            - "v*" # Trigger on version tags
-
-permissions:
-    id-token: write
-    contents: write
+  push:
+    tags:
+      - "v*" # Trigger on version tags
 
 env:
-    NODE_VERSION: 24
+  NODE_VERSION: 24
 
 jobs:
-    check:
-        runs-on: ubuntu-latest
+  check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
-        steps:
-            - name: Checkout code
-              uses: actions/checkout@v5
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
 
-            - name: Check tag matches package.json version
-              run: |
-                  TAG_VERSION="${GITHUB_REF_NAME#v}"
-                  PKG_VERSION="$(jq -r '.version' package.json)"
+      - name: Check tag matches package.json version
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          PKG_VERSION="$(jq -r '.version' package.json)"
 
-                  echo "Tag version: $TAG_VERSION"
-                  echo "Package version: $PKG_VERSION"
+          echo "Tag version: $TAG_VERSION"
+          echo "Package version: $PKG_VERSION"
 
-                  if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
-                    echo "❌ Tag version does not match package.json version"
-                    exit 1
-                  fi
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+            echo "❌ Tag version does not match package.json version"
+            exit 1
+          fi
 
-    #
+  #
 
-    test:
-        needs: [check]
-        uses: ./.github/workflows/check.yml
-        permissions:
-            contents: read
+  test:
+    needs: [check]
+    uses: ./.github/workflows/check.yml
+    permissions:
+      contents: read
 
-    #
+  #
 
-    release:
-        needs: [test]
-        runs-on: ubuntu-latest
+  release:
+    needs: [test]
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: write
 
-        steps:
-            - name: Checkout code
-              uses: actions/checkout@v5
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
 
-            - name: Install pnpm
-              uses: pnpm/action-setup@v4
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
 
-            - name: Use Node.js ${{ env.NODE_VERSION }}
-              uses: actions/setup-node@v4
-              with:
-                  node-version: ${{ env.NODE_VERSION }}
-                  cache: "pnpm"
+      - name: Use Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
 
-            - name: Install dependencies
-              run: pnpm install --frozen-lockfile
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
 
-            - name: Pack project
-              run: pnpm pack
+      - name: Pack project
+        run: pnpm pack
 
-            - name: Upload release asset
-              uses: softprops/action-gh-release@v2
-              with:
-                  files: "*.tgz"
-                  generate_release_notes: true
-              env:
-                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # Publish the packed tarball, so npm and the GitHub release get the same file
+      - name: Publish to NPM
+        shell: bash
+        run: pnpm publish ./*.tgz --access public --no-git-checks
 
-            - name: Publish to NPM
-              shell: bash
-              run: pnpm publish --access public --no-git-checks
+      - name: Upload release asset
+        uses: softprops/action-gh-release@v2
+        with:
+          files: "*.tgz"
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
