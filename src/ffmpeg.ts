@@ -1,4 +1,5 @@
-import { type ChildProcessWithoutNullStreams, spawn } from "child_process";
+import { type ChildProcessByStdio, spawn } from "child_process";
+import type { Readable } from "stream";
 import { err, errAsync, ok, ResultAsync } from "neverthrow";
 import { TypedEmitterProtected } from "@darco2903/typed-emitter";
 import type { FFMPEGProgress, FFMPEGSpawnErr } from "./types/index.js";
@@ -6,6 +7,7 @@ import type { FFMPEGEvents } from "./types/events.js";
 
 export class FFMPEG extends TypedEmitterProtected<FFMPEGEvents> {
     protected static readonly MAX_STDERR_LENGTH = 32_000;
+    protected static readonly OVERWRITE_PROMPT = /^File '.+' already exists\. Overwrite\? \[y\/N\]/m;
     protected static EmptyProgress(): FFMPEGProgress {
         return {
             duration: null,
@@ -21,7 +23,7 @@ export class FFMPEG extends TypedEmitterProtected<FFMPEGEvents> {
     }
 
     public readonly args: string[];
-    protected child: ChildProcessWithoutNullStreams | null;
+    protected child: ChildProcessByStdio<null, Readable, Readable> | null;
     protected lastStderr: string;
     protected _progress: FFMPEGProgress;
     protected _killed: boolean = false;
@@ -125,12 +127,13 @@ export class FFMPEG extends TypedEmitterProtected<FFMPEGEvents> {
             return errAsync({ code: -1, message: "FFMPEG process already started" });
         }
 
-        let child: ChildProcessWithoutNullStreams;
+        let child: ChildProcessByStdio<null, Readable, Readable>;
         this.lastStderr = "";
         this._progress = FFMPEG.EmptyProgress();
 
         try {
-            child = spawn(this.execPath, this.args);
+            // stdin is ignored: an open pipe nobody writes to makes ffmpeg wait forever on prompts and pipe:0
+            child = spawn(this.execPath, this.args, { stdio: ["ignore", "pipe", "pipe"] });
             this.child = child;
         } catch (e) {
             return errAsync({ code: -1, message: String(e) });
@@ -159,7 +162,8 @@ export class FFMPEG extends TypedEmitterProtected<FFMPEGEvents> {
                 child.once("close", async (code) => {
                     this.child = null;
 
-                    if (code === 0) {
+                    // ffmpeg exits 0 after declining the overwrite prompt, but nothing was written
+                    if (code === 0 && !FFMPEG.OVERWRITE_PROMPT.test(this.lastStderr)) {
                         resolve(null);
                     } else {
                         resolve({ code: code ?? -1, message: this.lastStderr });

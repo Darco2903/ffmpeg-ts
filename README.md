@@ -34,6 +34,8 @@ if (res.isOk()) {
 }
 ```
 
+FFMPEG runs with stdin closed, so it can never wait for input. If an output file already exists and neither `-y` nor `-n` is set, `start()` returns an error. With `-n`, `start()` succeeds without writing the file, because that is what `-n` asks for.
+
 You can stop the FFMPEG process at any time by `ffmpeg.stop()`.
 
 ```ts

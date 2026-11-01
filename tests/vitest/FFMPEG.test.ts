@@ -89,6 +89,33 @@ describe("FFMPEG", () => {
         expect(res.isOk()).toBe(true);
     });
 
+    it.each([[[]], [["-loglevel", "quiet"]]])("should fail instead of hanging when the output exists and -y is not set (%j)", async (extraArgs: string[]) => {
+        execSync("ffmpeg -f lavfi -i smptebars -t 1 smpte.mp4 -y"); // create smpte.mp4
+        fs.writeFileSync("output.mp4", "");
+
+        const ffmpeg = new FFMPEG([...extraArgs, "-i", "smpte.mp4", "output.mp4"]);
+        const res = await ffmpeg.start();
+        expect(res.isErr()).toBe(true);
+        expect(ffmpeg.processing).toBe(false);
+        expect(fs.statSync("output.mp4").size).toBe(0);
+    });
+
+    it("should succeed when -n skips an existing output", async () => {
+        execSync("ffmpeg -f lavfi -i smptebars -t 1 smpte.mp4 -y"); // create smpte.mp4
+        fs.writeFileSync("output.mp4", "");
+
+        const ffmpeg = new FFMPEG(["-n", "-i", "smpte.mp4", "output.mp4"]);
+        const res = await ffmpeg.start();
+        expect(res.isOk()).toBe(true);
+        expect(fs.statSync("output.mp4").size).toBe(0);
+    });
+
+    it("should fail instead of hanging when reading from stdin", async () => {
+        const ffmpeg = new FFMPEG(["-f", "mp4", "-i", "pipe:0", "-f", "null", "-"]);
+        const res = await ffmpeg.start();
+        expect(res.isErr()).toBe(true);
+    });
+
     it("should kill a running FFMPEG instance", async () => {
         const args: string[] = ["-f", "lavfi", "-i", "smptebars", "-t", "300", "smpte.mp4", "-y"];
         const ffmpeg = new FFMPEG(args);
