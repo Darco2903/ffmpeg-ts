@@ -140,7 +140,7 @@ export class FFMPEG extends TypedEmitterProtected<FFMPEGEvents> {
             });
         });
 
-        child.stdout?.setEncoding("utf8");
+        // No encoding: stdout can carry binary output, such as -f rawvideo -
         child.stdout?.on("data", (data) => {
             this._emit("stdout", data);
         });

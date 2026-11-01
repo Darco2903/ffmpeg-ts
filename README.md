@@ -61,6 +61,8 @@ The library adds `-nostats -progress pipe:2` to the command, without changing `f
 
 ## Output
 
+The `stdout` event fires with raw `Buffer` chunks, so binary output such as `-f rawvideo -` stays intact. Use `Buffer.concat()` before decoding text, since a chunk can end in the middle of a character.
+
 The `stderr` event fires once per line, without the progress data. FFMPEG's periodic `frame=...` status line is not printed, since `-nostats` turns it off.
 
 ## Errors

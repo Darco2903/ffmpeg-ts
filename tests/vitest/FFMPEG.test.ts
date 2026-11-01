@@ -196,13 +196,28 @@ describe("FFMPEG", () => {
         const ffmpeg = new FFMPEG(["-progress", "pipe:1", "-f", "lavfi", "-i", "smptebars", "-t", "1", "smpte.mp4", "-y"]);
         let stdout = "";
         ffmpeg.on("stdout", (data) => {
-            stdout += data;
+            stdout += data.toString();
         });
 
         const res = await ffmpeg.start();
         expect(res.isOk()).toBe(true);
         expect(stdout).toContain("progress=end");
         expect(ffmpeg.progress.frame).toBeNull();
+    });
+
+    it("should keep binary stdout intact", async () => {
+        const args: string[] = ["-v", "error", "-f", "lavfi", "-i", "smptebars", "-frames:v", "5", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"];
+        const expected = execSync(`ffmpeg ${args.join(" ")}`, { maxBuffer: 1 << 28 });
+
+        const ffmpeg = new FFMPEG(args);
+        const chunks: Buffer[] = [];
+        ffmpeg.on("stdout", (data) => {
+            chunks.push(data);
+        });
+
+        const res = await ffmpeg.start();
+        expect(res.isOk()).toBe(true);
+        expect(Buffer.concat(chunks).equals(expected)).toBe(true);
     });
 
     it("should keep progress out of the error message", async () => {

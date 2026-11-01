@@ -1,7 +1,7 @@
 import type { FFMPEGProgress } from "./ffmpeg.js";
 
 export type FFMPEGEvents = {
-    stdout: [data: string];
+    stdout: [data: Buffer];
     stderr: [data: string];
     progress: [progress: FFMPEGProgress];
 };
