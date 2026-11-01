@@ -3,7 +3,7 @@ import os from "os";
 import path from "path";
 import { execSync } from "child_process";
 import { describe, it, expect, afterAll } from "vitest";
-import { FFMPEG, FFMPEGProgress } from "../../src/index.js";
+import { FFMPEG, FFMPEGEvents, FFMPEGProgress } from "../../src/index.js";
 
 //////////////////////////
 // create FFMPEG tests
@@ -77,7 +77,9 @@ describe("FFMPEG", () => {
         const res = await ffmpeg.start();
         expect(res.isErr()).toBe(true);
         if (res.isErr()) {
-            expect(res.error).toHaveProperty("code");
+            expect(res.error.kind).toBe("spawn-failed");
+            expect(res.error.code).toBe(-1);
+            expect(res.error.signal).toBeNull();
             expect(res.error).toHaveProperty("message");
         }
     });
@@ -98,6 +100,10 @@ describe("FFMPEG", () => {
         const ffmpeg = new FFMPEG([...extraArgs, "-i", "smpte.mp4", "output.mp4"]);
         const res = await ffmpeg.start();
         expect(res.isErr()).toBe(true);
+        if (res.isErr()) {
+            expect(res.error.kind).toBe("output-exists");
+            expect(res.error.code).toBe(-1);
+        }
         expect(ffmpeg.processing).toBe(false);
         expect(fs.statSync("output.mp4").size).toBe(0);
     });
@@ -204,6 +210,54 @@ describe("FFMPEG", () => {
 
         expect(ffmpeg.stop()).toBe(false);
         expect(ffmpeg.killed).toBe(false);
+    });
+
+    it("should report the signal that killed the process", async () => {
+        const args: string[] = ["-re", "-f", "lavfi", "-i", "smptebars", "-f", "null", "-"];
+        const ffmpeg = new FFMPEG(args);
+        const startPromise = ffmpeg.start();
+
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        ffmpeg.stop("SIGKILL");
+
+        const res = await startPromise;
+        expect(res.isErr()).toBe(true);
+        if (res.isErr()) {
+            expect(res.error.kind).toBe("exited");
+            expect(res.error.code).toBe(-1);
+            expect(res.error.signal).toBe("SIGKILL");
+        }
+    });
+
+    it("should report a non-zero exit code", async () => {
+        const res = await new FFMPEG(["-i", "nonexistent_input.mp4", "output.mp4", "-y"]).start();
+        expect(res.isErr()).toBe(true);
+        if (res.isErr()) {
+            expect(res.error.kind).toBe("exited");
+            expect(res.error.code).toBeGreaterThan(0);
+            expect(res.error.signal).toBeNull();
+            expect(res.error.message).toContain("nonexistent_input.mp4");
+        }
+    });
+
+    it("should refuse to start twice at the same time", async () => {
+        const args: string[] = ["-re", "-f", "lavfi", "-i", "smptebars", "-f", "null", "-"];
+        const ffmpeg = new FFMPEG(args);
+        const startPromise = ffmpeg.start();
+
+        const res = await ffmpeg.start();
+        expect(res.isErr()).toBe(true);
+        if (res.isErr()) {
+            expect(res.error.kind).toBe("already-started");
+        }
+
+        ffmpeg.stop("SIGKILL");
+        await startPromise;
+    });
+
+    it("should export the event map", () => {
+        const onProgress: (...args: FFMPEGEvents["progress"]) => void = () => {};
+        new FFMPEG([]).on("progress", onProgress);
     });
 
     it("should not kill a non-running FFMPEG instance", () => {

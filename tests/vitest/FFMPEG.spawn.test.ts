@@ -19,6 +19,7 @@ describe("FFMPEG spawn failure", () => {
         const res = await ffmpeg.start();
         expect(res.isErr()).toBe(true);
         if (res.isErr()) {
+            expect(res.error.kind).toBe("spawn-failed");
             expect(res.error.message).toBe("spawn ffmpeg EMFILE");
         }
         expect(ffmpeg.processing).toBe(false);

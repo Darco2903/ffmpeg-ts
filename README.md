@@ -34,6 +34,17 @@ if (res.isOk()) {
 }
 ```
 
+`res.error.kind` tells failures apart:
+
+| `kind`            | Meaning                                                  |
+| ----------------- | -------------------------------------------------------- |
+| `already-started` | `start()` was called while a process is running          |
+| `spawn-failed`    | The process could not be started                         |
+| `output-exists`   | The output file exists and neither `-y` nor `-n` was set |
+| `exited`          | FFMPEG exited with an error or was killed by a signal    |
+
+`res.error.code` is the exit code, or `-1` if there is none. `res.error.signal` is the signal that killed the process, if any. FFMPEG catches `SIGTERM` and `SIGINT` and exits with a code, so `signal` is only set for signals it cannot handle, such as `SIGKILL`.
+
 FFMPEG runs with stdin closed, so it can never wait for input. If an output file already exists and neither `-y` nor `-n` is set, `start()` returns an error. With `-n`, `start()` succeeds without writing the file, because that is what `-n` asks for.
 
 You can stop the FFMPEG process at any time by `ffmpeg.stop()`.

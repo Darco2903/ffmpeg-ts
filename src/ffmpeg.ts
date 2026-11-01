@@ -124,7 +124,7 @@ export class FFMPEG extends TypedEmitterProtected<FFMPEGEvents> {
 
     public start(): ResultAsync<void, FFMPEGSpawnErr> {
         if (this.processing) {
-            return errAsync({ code: -1, message: "FFMPEG process already started" });
+            return errAsync({ kind: "already-started", code: -1, signal: null, message: "FFMPEG process already started" });
         }
 
         let child: ChildProcessByStdio<null, Readable, Readable>;
@@ -137,25 +137,27 @@ export class FFMPEG extends TypedEmitterProtected<FFMPEGEvents> {
             child = spawn(this.execPath, this.args, { stdio: ["ignore", "pipe", "pipe"] });
             this.child = child;
         } catch (e) {
-            return errAsync({ code: -1, message: String(e) });
+            return errAsync({ kind: "spawn-failed", code: -1, signal: null, message: String(e) });
         }
 
         // Listeners come first: a failed spawn has no streams and reports through "error"
         const result = new Promise<Result<void, FFMPEGSpawnErr>>((resolve) => {
-            child.once("close", (code) => {
+            child.once("close", (code, signal) => {
                 this.child = null;
 
-                // ffmpeg exits 0 after declining the overwrite prompt, but nothing was written
-                if (code === 0 && !FFMPEG.OVERWRITE_PROMPT.test(this.lastStderr)) {
-                    resolve(ok());
+                if (code !== 0) {
+                    resolve(err({ kind: "exited", code: code ?? -1, signal, message: this.lastStderr }));
+                } else if (FFMPEG.OVERWRITE_PROMPT.test(this.lastStderr)) {
+                    // ffmpeg exits 0 after declining the overwrite prompt, but nothing was written
+                    resolve(err({ kind: "output-exists", code: -1, signal: null, message: this.lastStderr }));
                 } else {
-                    resolve(err({ code: code ?? -1, message: this.lastStderr }));
+                    resolve(ok());
                 }
             });
 
             child.once("error", (e) => {
                 this.child = null;
-                resolve(err({ code: -1, message: e.message }));
+                resolve(err({ kind: "spawn-failed", code: -1, signal: null, message: e.message }));
             });
         });
 
