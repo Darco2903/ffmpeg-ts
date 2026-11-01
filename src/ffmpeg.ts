@@ -130,6 +130,7 @@ export class FFMPEG extends TypedEmitterProtected<FFMPEGEvents> {
         let child: ChildProcessByStdio<null, Readable, Readable>;
         this.lastStderr = "";
         this._progress = FFMPEG.EmptyProgress();
+        this._killed = false;
 
         try {
             // stdin is ignored: an open pipe nobody writes to makes ffmpeg wait forever on prompts and pipe:0
@@ -185,11 +186,9 @@ export class FFMPEG extends TypedEmitterProtected<FFMPEGEvents> {
     }
 
     public stop(signal?: NodeJS.Signals): boolean {
-        if (this.child && !this._killed) {
-            if (this.child.kill(signal)) {
-                this._killed = true;
-                return true;
-            }
+        if (this.child?.kill(signal)) {
+            this._killed = true;
+            return true;
         }
         return false;
     }

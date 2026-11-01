@@ -1,4 +1,6 @@
 import fs from "fs";
+import os from "os";
+import path from "path";
 import { execSync } from "child_process";
 import { describe, it, expect, afterAll } from "vitest";
 import { FFMPEG, FFMPEGProgress } from "../../src/index.js";
@@ -150,27 +152,58 @@ describe("FFMPEG", () => {
         expect(progressUpdates.length).toBeGreaterThan(0);
     });
 
-    it("should not kill an already killed FFMPEG instance", async () => {
-        const args: string[] = ["-f", "lavfi", "-i", "smptebars", "-t", "300", "smpte.mp4", "-y"];
+    it.skipIf(process.platform === "win32")("should escalate to a stronger signal when the first one is ignored", async () => {
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ffmpeg-ts-"));
+        const execPath = path.join(dir, "ignore-sigterm.sh");
+        fs.writeFileSync(execPath, "#!/bin/sh\ntrap '' TERM\nwhile :; do sleep 0.1; done\n", { mode: 0o755 });
+
+        try {
+            const ffmpeg = new FFMPEG([], { execPath });
+            const startPromise = ffmpeg.start();
+
+            // Wait a moment to ensure the trap is installed
+            await new Promise((resolve) => setTimeout(resolve, 100));
+            expect(ffmpeg.stop()).toBe(true);
+
+            await new Promise((resolve) => setTimeout(resolve, 100));
+            expect(ffmpeg.processing).toBe(true);
+
+            expect(ffmpeg.stop("SIGKILL")).toBe(true);
+            const res = await startPromise;
+            expect(ffmpeg.processing).toBe(false);
+            expect(res.isErr()).toBe(true);
+        } finally {
+            fs.rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
+    it("should stop an instance that was restarted after being stopped", async () => {
+        const args: string[] = ["-re", "-f", "lavfi", "-i", "smptebars", "-f", "null", "-"];
         const ffmpeg = new FFMPEG(args);
-        const startPromise = ffmpeg.start();
 
-        // Wait a moment to ensure FFMPEG has started
+        const firstRun = ffmpeg.start();
         await new Promise((resolve) => setTimeout(resolve, 100));
-        expect(ffmpeg.processing).toBe(true);
+        expect(ffmpeg.stop()).toBe(true);
+        await firstRun;
+        expect(ffmpeg.killed).toBe(true);
+
+        const secondRun = ffmpeg.start();
         expect(ffmpeg.killed).toBe(false);
-
-        const firstKillResult = ffmpeg.stop();
-        expect(firstKillResult).toBe(true);
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        expect(ffmpeg.stop()).toBe(true);
         expect(ffmpeg.killed).toBe(true);
 
-        const secondKillResult = ffmpeg.stop();
-        expect(secondKillResult).toBe(false);
-        expect(ffmpeg.killed).toBe(true);
-
-        const res = await startPromise;
+        const res = await secondRun;
         expect(ffmpeg.processing).toBe(false);
         expect(res.isErr()).toBe(true);
+    });
+
+    it("should not kill an instance that already finished", async () => {
+        const ffmpeg = new FFMPEG(["-version"]);
+        await ffmpeg.start();
+
+        expect(ffmpeg.stop()).toBe(false);
+        expect(ffmpeg.killed).toBe(false);
     });
 
     it("should not kill a non-running FFMPEG instance", () => {

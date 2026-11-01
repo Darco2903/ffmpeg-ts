@@ -44,4 +44,9 @@ ffmpeg.stop();
 
 // or with a specific signal
 ffmpeg.stop("SIGINT");
+
+// FFMPEG finishes up on SIGTERM, so call stop() again if it does not exit
+ffmpeg.stop("SIGKILL");
 ```
+
+`stop()` returns `true` if the signal was sent, which does not mean the process has exited. `ffmpeg.killed` is reset by the next `start()`.
