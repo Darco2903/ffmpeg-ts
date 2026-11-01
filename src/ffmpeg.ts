@@ -4,10 +4,12 @@ import { err, errAsync, ok, type Result, ResultAsync } from "neverthrow";
 import { TypedEmitterProtected } from "@darco2903/typed-emitter";
 import type { FFMPEGProgress, FFMPEGSpawnErr } from "./types/index.js";
 import type { FFMPEGEvents } from "./types/events.js";
+import { applyProgressBlock, parseDuration, parseProgressLine } from "./progress.js";
 
 export class FFMPEG extends TypedEmitterProtected<FFMPEGEvents> {
     protected static readonly MAX_STDERR_LENGTH = 32_000;
     protected static readonly OVERWRITE_PROMPT = /^File '.+' already exists\. Overwrite\? \[y\/N\]/m;
+    protected static readonly PROGRESS_ARGS = ["-nostats", "-progress", "pipe:2"];
     protected static EmptyProgress(): FFMPEGProgress {
         return {
             duration: null,
@@ -25,6 +27,8 @@ export class FFMPEG extends TypedEmitterProtected<FFMPEGEvents> {
     public readonly args: string[];
     protected child: ChildProcessByStdio<null, Readable, Readable> | null;
     protected lastStderr: string;
+    protected stderrBuffer: string;
+    protected progressBlock: Map<string, string>;
     protected _progress: FFMPEGProgress;
     protected _killed: boolean = false;
     public readonly execPath: string;
@@ -46,78 +50,43 @@ export class FFMPEG extends TypedEmitterProtected<FFMPEGEvents> {
         this.args = args;
         this.child = null;
         this.lastStderr = "";
+        this.stderrBuffer = "";
+        this.progressBlock = new Map();
         this._progress = FFMPEG.EmptyProgress();
         this.execPath = execPath ?? "ffmpeg";
     }
 
     protected onStderrData(data: string): void {
-        if (this._progress.duration === null) {
-            // extract duration
-            const durMatch = data.match(/Duration: (\d+):(\d+):(\d+(\.\d+)?)/);
-            if (durMatch) {
-                const hours = parseInt(durMatch[1], 10);
-                const minutes = parseInt(durMatch[2], 10);
-                const seconds = parseFloat(durMatch[3]);
-                if (!isNaN(hours) && !isNaN(minutes) && !isNaN(seconds)) {
-                    this._progress.duration = hours * 3600 + minutes * 60 + seconds;
-                    // console.log(`Video duration: ${this.progress.duration} seconds`);
-                }
+        const lines = (this.stderrBuffer + data).split(/\r\n|\r|\n/);
+        this.stderrBuffer = lines.pop() ?? "";
+
+        for (const line of lines) {
+            this.onStderrLine(line);
+        }
+    }
+
+    protected onStderrLine(line: string): void {
+        const entry = parseProgressLine(line);
+
+        if (entry === null) {
+            this._progress.duration ??= parseDuration(line);
+            this._emit("stderr", `${line}\n`);
+
+            this.lastStderr += `${line}\n`;
+
+            if (this.lastStderr.length > FFMPEG.MAX_STDERR_LENGTH) {
+                this.lastStderr = this.lastStderr.slice(-FFMPEG.MAX_STDERR_LENGTH);
             }
+            return;
         }
 
-        if (this._progress.duration !== null) {
-            // track progress
+        const [key, value] = entry;
+        this.progressBlock.set(key, value);
 
-            const frameMatch = data.match(/frame=\s*(\d+)\s*fps=/);
-            if (frameMatch) {
-                this._progress.frame = parseInt(frameMatch[1], 10);
-                // console.log(`Processed frame: ${this.progress.frame}`);
-            }
-
-            const fpsMatch = data.match(/fps=\s*([\d\.]+)\s*q=/);
-            if (fpsMatch) {
-                this._progress.fps = parseFloat(fpsMatch[1]);
-                // console.log(`Current FPS: ${this.progress.fps}`);
-            }
-
-            const qMatch = data.match(/q=\s*([\d\.]+)/);
-            if (qMatch) {
-                this._progress.quality = parseFloat(qMatch[1]);
-                // console.log(`Current quality (q): ${this.progress.quality}`);
-            }
-
-            const sizeMatch = data.match(/size=\s*([\d.]+)kB/);
-            if (sizeMatch) {
-                this._progress.sizeKB = parseFloat(sizeMatch[1]);
-                // console.log(`Output size: ${this.progress.sizeKB} kB`);
-            }
-
-            const timeMatch = data.match(/time=(\d+):(\d+):(\d+(\.\d+)?)/);
-            if (timeMatch) {
-                const hours = parseInt(timeMatch[1], 10);
-                const minutes = parseInt(timeMatch[2], 10);
-                const seconds = parseFloat(timeMatch[3]);
-                if (!isNaN(hours) && !isNaN(minutes) && !isNaN(seconds)) {
-                    this._progress.timeInSeconds = hours * 3600 + minutes * 60 + seconds;
-                    if (this._progress.duration > 0) {
-                        this._progress.percent = (this._progress.timeInSeconds / this._progress.duration) * 100;
-                    }
-                }
-                // console.log(`Processed time: ${this.progress.timeInSeconds} seconds`);
-            }
-
-            const bitrateMatch = data.match(/bitrate=\s*([\d.]+)kbits?\/s/);
-            if (bitrateMatch) {
-                this._progress.bitrateKbps = parseFloat(bitrateMatch[1]);
-                // console.log(`Current bitrate: ${this.progress.bitrateKbps} kbits/s`);
-            }
-
-            const speedMatch = data.match(/speed=\s*([\d\.]+)x/);
-            if (speedMatch) {
-                this._progress.speed = parseFloat(speedMatch[1]);
-                // console.log(`Processing speed: ${this.progress.speed}x`);
-            }
-
+        // "progress" is the last key of a block
+        if (key === "progress") {
+            applyProgressBlock(this._progress, this.progressBlock);
+            this.progressBlock.clear();
             this._emit("progress", this.progress);
         }
     }
@@ -129,12 +98,16 @@ export class FFMPEG extends TypedEmitterProtected<FFMPEGEvents> {
 
         let child: ChildProcessByStdio<null, Readable, Readable>;
         this.lastStderr = "";
+        this.stderrBuffer = "";
+        this.progressBlock.clear();
         this._progress = FFMPEG.EmptyProgress();
         this._killed = false;
+        // Added here rather than in the constructor so that this.args stays what the caller passed
+        const args = this.args.includes("-progress") ? this.args : [...FFMPEG.PROGRESS_ARGS, ...this.args];
 
         try {
             // stdin is ignored: an open pipe nobody writes to makes ffmpeg wait forever on prompts and pipe:0
-            child = spawn(this.execPath, this.args, { stdio: ["ignore", "pipe", "pipe"] });
+            child = spawn(this.execPath, args, { stdio: ["ignore", "pipe", "pipe"] });
             this.child = child;
         } catch (e) {
             return errAsync({ kind: "spawn-failed", code: -1, signal: null, message: String(e) });
@@ -144,6 +117,12 @@ export class FFMPEG extends TypedEmitterProtected<FFMPEGEvents> {
         const result = new Promise<Result<void, FFMPEGSpawnErr>>((resolve) => {
             child.once("close", (code, signal) => {
                 this.child = null;
+
+                // The last line may have no line ending, like the overwrite prompt
+                if (this.stderrBuffer !== "") {
+                    this.onStderrLine(this.stderrBuffer);
+                    this.stderrBuffer = "";
+                }
 
                 if (code !== 0) {
                     resolve(err({ kind: "exited", code: code ?? -1, signal, message: this.lastStderr }));
@@ -168,14 +147,6 @@ export class FFMPEG extends TypedEmitterProtected<FFMPEGEvents> {
 
         child.stderr?.setEncoding("utf8");
         child.stderr?.on("data", (data) => {
-            this._emit("stderr", data);
-
-            this.lastStderr += data;
-
-            if (this.lastStderr.length > FFMPEG.MAX_STDERR_LENGTH) {
-                this.lastStderr = this.lastStderr.slice(-FFMPEG.MAX_STDERR_LENGTH);
-            }
-
             this.onStderrData(data);
         });
 

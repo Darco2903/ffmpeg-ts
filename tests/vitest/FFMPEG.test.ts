@@ -155,20 +155,80 @@ describe("FFMPEG", () => {
 
         const res = await ffmpeg.start();
         expect(res.isOk()).toBe(true);
+        expect(ffmpeg.args).toEqual(args);
         expect(progressUpdates.length).toBeGreaterThan(0);
+        expect(progressUpdates.at(-1)).toEqual(ffmpeg.progress);
+        expect(ffmpeg.progress).toEqual({
+            duration: 1,
+            percent: expect.any(Number),
+            frame: 25,
+            fps: expect.any(Number),
+            quality: -1,
+            sizeKB: expect.any(Number),
+            timeInSeconds: expect.any(Number),
+            bitrateKbps: expect.any(Number),
+            speed: expect.any(Number),
+        } satisfies Record<keyof FFMPEGProgress, unknown>);
+        expect(ffmpeg.progress.percent).toBeGreaterThan(0);
+        expect(ffmpeg.progress.percent).toBeLessThanOrEqual(100);
+        expect(ffmpeg.progress.sizeKB).toBeGreaterThan(0);
+    });
+
+    it("should report progress for inputs without a duration", async () => {
+        const ffmpeg = new FFMPEG(["-f", "lavfi", "-i", "smptebars", "-t", "1", "smpte.mp4", "-y"]);
+
+        const res = await ffmpeg.start();
+        expect(res.isOk()).toBe(true);
+        expect(ffmpeg.progress.duration).toBeNull();
+        expect(ffmpeg.progress.percent).toBeNull();
+        expect(ffmpeg.progress.frame).toBe(25);
+    });
+
+    it("should report progress with a quiet log level", async () => {
+        const ffmpeg = new FFMPEG(["-loglevel", "error", "-f", "lavfi", "-i", "smptebars", "-t", "1", "smpte.mp4", "-y"]);
+
+        const res = await ffmpeg.start();
+        expect(res.isOk()).toBe(true);
+        expect(ffmpeg.progress.frame).toBe(25);
+    });
+
+    it("should leave a caller's own -progress alone", async () => {
+        const ffmpeg = new FFMPEG(["-progress", "pipe:1", "-f", "lavfi", "-i", "smptebars", "-t", "1", "smpte.mp4", "-y"]);
+        let stdout = "";
+        ffmpeg.on("stdout", (data) => {
+            stdout += data;
+        });
+
+        const res = await ffmpeg.start();
+        expect(res.isOk()).toBe(true);
+        expect(stdout).toContain("progress=end");
+        expect(ffmpeg.progress.frame).toBeNull();
+    });
+
+    it("should keep progress out of the error message", async () => {
+        const ffmpeg = new FFMPEG(["-re", "-f", "lavfi", "-i", "smptebars", "-f", "null", "-"]);
+        ffmpeg.on("progress", () => ffmpeg.stop());
+
+        const res = await ffmpeg.start();
+        expect(ffmpeg.progress.frame).not.toBeNull();
+        expect(res.isErr()).toBe(true);
+        if (res.isErr()) {
+            expect(res.error.message).toContain("smptebars");
+            expect(res.error.message).not.toContain("out_time_us");
+        }
     });
 
     it.skipIf(process.platform === "win32")("should escalate to a stronger signal when the first one is ignored", async () => {
         const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ffmpeg-ts-"));
         const execPath = path.join(dir, "ignore-sigterm.sh");
-        fs.writeFileSync(execPath, "#!/bin/sh\ntrap '' TERM\nwhile :; do sleep 0.1; done\n", { mode: 0o755 });
+        fs.writeFileSync(execPath, "#!/bin/sh\ntrap '' TERM\necho ready\nwhile :; do sleep 0.1; done\n", { mode: 0o755 });
 
         try {
             const ffmpeg = new FFMPEG([], { execPath });
+            const ready = new Promise((resolve) => ffmpeg.on("stdout", resolve));
             const startPromise = ffmpeg.start();
 
-            // Wait a moment to ensure the trap is installed
-            await new Promise((resolve) => setTimeout(resolve, 100));
+            await ready;
             expect(ffmpeg.stop()).toBe(true);
 
             await new Promise((resolve) => setTimeout(resolve, 100));
