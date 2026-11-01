@@ -1,6 +1,6 @@
 import { type ChildProcessByStdio, spawn } from "child_process";
 import type { Readable } from "stream";
-import { err, errAsync, ok, ResultAsync } from "neverthrow";
+import { err, errAsync, ok, type Result, ResultAsync } from "neverthrow";
 import { TypedEmitterProtected } from "@darco2903/typed-emitter";
 import type { FFMPEGProgress, FFMPEGSpawnErr } from "./types/index.js";
 import type { FFMPEGEvents } from "./types/events.js";
@@ -140,13 +140,32 @@ export class FFMPEG extends TypedEmitterProtected<FFMPEGEvents> {
             return errAsync({ code: -1, message: String(e) });
         }
 
-        child.stdout.setEncoding("utf8");
-        child.stdout.on("data", (data) => {
+        // Listeners come first: a failed spawn has no streams and reports through "error"
+        const result = new Promise<Result<void, FFMPEGSpawnErr>>((resolve) => {
+            child.once("close", (code) => {
+                this.child = null;
+
+                // ffmpeg exits 0 after declining the overwrite prompt, but nothing was written
+                if (code === 0 && !FFMPEG.OVERWRITE_PROMPT.test(this.lastStderr)) {
+                    resolve(ok());
+                } else {
+                    resolve(err({ code: code ?? -1, message: this.lastStderr }));
+                }
+            });
+
+            child.once("error", (e) => {
+                this.child = null;
+                resolve(err({ code: -1, message: e.message }));
+            });
+        });
+
+        child.stdout?.setEncoding("utf8");
+        child.stdout?.on("data", (data) => {
             this._emit("stdout", data);
         });
 
-        child.stderr.setEncoding("utf8");
-        child.stderr.on("data", (data) => {
+        child.stderr?.setEncoding("utf8");
+        child.stderr?.on("data", (data) => {
             this._emit("stderr", data);
 
             this.lastStderr += data;
@@ -158,31 +177,7 @@ export class FFMPEG extends TypedEmitterProtected<FFMPEGEvents> {
             this.onStderrData(data);
         });
 
-        return ResultAsync.fromSafePromise(
-            new Promise<null | FFMPEGSpawnErr>((resolve) => {
-                child.once("close", async (code) => {
-                    this.child = null;
-
-                    // ffmpeg exits 0 after declining the overwrite prompt, but nothing was written
-                    if (code === 0 && !FFMPEG.OVERWRITE_PROMPT.test(this.lastStderr)) {
-                        resolve(null);
-                    } else {
-                        resolve({ code: code ?? -1, message: this.lastStderr });
-                    }
-                });
-
-                child.once("error", async (e) => {
-                    this.child = null;
-                    resolve({ code: -1, message: e.message });
-                });
-            }),
-        ).andThen((spawnErr) => {
-            if (spawnErr !== null) {
-                return err(spawnErr);
-            } else {
-                return ok(undefined);
-            }
-        });
+        return new ResultAsync(result);
     }
 
     public stop(signal?: NodeJS.Signals): boolean {
