@@ -9,12 +9,25 @@
         "cli",
         "wrapper"
     ],
-    "license": "ISC",
+    "license": "MIT",
     "main": "dist/index.js",
     "types": "dist/index.d.ts",
     "type": "module",
-    "packageManager": "pnpm@10.30.3",
+    "packageManager": "pnpm@12.16.1",
+    "exports": {
+        ".": {
+            "types": "./dist/index.d.ts",
+            "default": "./dist/index.js"
+        }
+    },
+    "files": [
+        "dist"
+    ],
+    "engines": {
+        "node": ">=22"
+    },
     "repository": {
+        "type": "git",
         "url": "https://github.com/Darco2903/ffmpeg-ts.git"
     },
     "publishConfig": {
@@ -22,8 +35,9 @@
     },
     "scripts": {
         "build": "tsc",
+        "check": "tsc --noEmit",
         "prepack": "pnpm build",
-        "test": "vitest",
+        "test": "vitest run",
         "clean": "rimraf -g dist darco2903-ffmpeg-ts-*.tgz"
     },
     "dependencies": {
